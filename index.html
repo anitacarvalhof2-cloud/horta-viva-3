@@ -232,6 +232,430 @@ function toast(text){
   clearTimeout(window.toastTimer);
   window.toastTimer=setTimeout(()=>el.classList.remove('show'),2300);
 }
+</script>(() => {
+  const KEYS = {
+    activities: 'hvActivities',
+    challenges: 'hvChallenges',
+    progress: 'hvProgress',
+    observations: 'hvObservations',
+    materials: 'hvMaterials'
+  };
+
+  const read = key => {
+    try {
+      return JSON.parse(localStorage.getItem(key) || '[]');
+    } catch {
+      return [];
+    }
+  };
+
+  const write = (key, value) =>
+    localStorage.setItem(key, JSON.stringify(value));
+
+  const style = document.createElement('style');
+  style.textContent = `
+    #hvWorkspace { padding: 28px 0 10px; }
+    #hvWorkspace .hv-wrap { width:min(1120px,calc(100% - 36px));margin:auto; }
+    #hvWorkspace .hv-panel { background:var(--paper,#fffdf8);border:1px solid var(--line,#e4e9df);border-radius:20px;padding:22px;margin:16px 0; }
+    #hvWorkspace .hv-grid { display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px; }
+    #hvWorkspace .hv-card { background:#f2f5ee;border:1px solid var(--line,#e4e9df);border-radius:16px;padding:16px;margin:10px 0; }
+    #hvWorkspace h2,#hvWorkspace h3 { color:var(--green,#234b36); }
+    #hvWorkspace .hv-kicker { color:var(--green2,#527b56);font-size:11px;font-weight:850;letter-spacing:.12em; }
+    #hvWorkspace .hv-muted { color:var(--muted,#718071);font-size:13px; }
+    #hvWorkspace .hv-notice { background:#f7f0d9;border-radius:12px;padding:12px;font-size:13px; }
+    #hvWorkspace .hv-form { display:grid;gap:10px; }
+    #hvWorkspace input,#hvWorkspace select,#hvWorkspace textarea { width:100%;padding:11px;border:1px solid #dfe6da;border-radius:10px;font:inherit;background:white; }
+    #hvWorkspace textarea { min-height:84px;resize:vertical; }
+    #hvWorkspace .hv-list { padding-left:20px; }
+    #hvWorkspace .hv-progress { height:8px;background:#e7ecdf;border-radius:99px;overflow:hidden;margin:10px 0; }
+    #hvWorkspace .hv-progress span { height:100%;display:block;background:#6f9467; }
+    #hvWorkspace [hidden] { display:none !important; }
+    @media(max-width:600px) {
+      #hvWorkspace .hv-wrap { width:calc(100% - 24px); }
+      #hvWorkspace .hv-panel { padding:16px; }
+    }
+  `;
+  document.head.append(style);
+
+  const main = document.querySelector('main');
+  if (!main) return;
+
+  const workspace = document.createElement('section');
+  workspace.id = 'hvWorkspace';
+  workspace.className = 'soft';
+  workspace.hidden = true;
+  workspace.innerHTML = `
+    <div class="hv-wrap">
+      <div class="hv-kicker">HORTA VIVA · ESPAÇO DO PERFIL</div>
+      <h2 id="hvTitle"></h2>
+      <p id="hvIntro" class="hv-muted"></p>
+      <p class="hv-notice">
+        Demonstração local: atividades, registros e materiais ficam neste navegador.
+        Para compartilhar dados entre estudantes e professores em aparelhos diferentes,
+        será necessário criar um backend com contas e banco de dados.
+      </p>
+
+      <div id="hvIndividual" hidden>
+        <div class="hv-panel">
+          <h3>Minha horta pessoal</h3>
+          <p>Acompanhe suas plantas, planeje os cuidados e registre cada etapa.</p>
+          <div class="hv-grid">
+            <a class="btn" href="#plantas">Ver plantas</a>
+            <a class="btn" href="#calendario">Abrir meu calendário</a>
+            <a class="btn" href="#diario">Abrir meu diário</a>
+            <a class="btn" href="#desafios">Ver desafios</a>
+          </div>
+        </div>
+        <div class="hv-panel">
+          <h3>Trilha de aprendizagem</h3>
+          <div id="hvGuidesIndividual" class="hv-grid"></div>
+        </div>
+      </div>
+
+      <div id="hvStudent" hidden>
+        <div class="hv-grid">
+          <div class="hv-panel"><h3>Atividades da turma</h3><div id="hvStudentActivities"></div></div>
+          <div class="hv-panel"><h3>Progresso</h3><div id="hvStudentProgress"></div></div>
+        </div>
+        <div class="hv-panel">
+          <h3>Diário de observações</h3>
+          <form id="hvObservationForm" class="hv-form">
+            <input name="subject" required placeholder="O que você observou?">
+            <select name="category">
+              <option>Planta</option><option>Solo</option><option>Inseto ou animal</option>
+              <option>Água</option><option>Compostagem</option><option>Outro</option>
+            </select>
+            <textarea name="notes" placeholder="Descreva sua observação"></textarea>
+            <button class="btn" type="submit">Salvar observação</button>
+          </form>
+          <div id="hvObservationList"></div>
+        </div>
+        <div class="hv-panel"><h3>Desafios da turma</h3><div id="hvStudentChallenges"></div></div>
+        <div class="hv-panel"><h3>Portal de aprendizagem</h3><div id="hvGuidesStudent" class="hv-grid"></div></div>
+      </div>
+
+      <div id="hvTeacher" hidden>
+        <div class="hv-grid">
+          <div class="hv-panel"><h3>Resumo da turma</h3><div id="hvTeacherSummary"></div></div>
+          <div class="hv-panel"><h3>Organizar atividades</h3>
+            <form id="hvActivityForm" class="hv-form">
+              <input name="title" required placeholder="Título da atividade">
+              <select name="category">
+                <option>Compostagem</option><option>Biodiversidade</option>
+                <option>Economia de água</option><option>Reaproveitamento</option>
+                <option>Cultivo</option><option>Observação</option>
+              </select>
+              <input name="due" type="date">
+              <textarea name="instructions" required placeholder="Instruções e etapas"></textarea>
+              <button class="btn" type="submit">Criar atividade</button>
+            </form>
+          </div>
+        </div>
+
+        <div class="hv-grid">
+          <div class="hv-panel"><h3>Criar desafio</h3>
+            <form id="hvChallengeForm" class="hv-form">
+              <input name="title" required placeholder="Nome do desafio">
+              <select name="category">
+                <option>Compostagem</option><option>Biodiversidade</option>
+                <option>Economia de água</option><option>Reaproveitamento</option>
+                <option>Cultivo</option>
+              </select>
+              <select name="type"><option value="individual">Individual</option><option value="coletivo">Coletivo</option></select>
+              <input name="goal" required placeholder="Objetivo do desafio">
+              <textarea name="steps" required placeholder="Instruções e etapas"></textarea>
+              <button class="btn" type="submit">Publicar desafio</button>
+            </form>
+          </div>
+          <div class="hv-panel"><h3>Compartilhar material</h3>
+            <form id="hvMaterialForm" class="hv-form">
+              <input name="title" required placeholder="Título do material">
+              <input name="url" type="url" placeholder="Link (opcional)">
+              <textarea name="description" placeholder="Resumo ou orientação para a turma"></textarea>
+              <button class="btn" type="submit">Adicionar à biblioteca</button>
+            </form>
+          </div>
+        </div>
+
+        <div class="hv-grid">
+          <div class="hv-panel"><h3>Atividades publicadas</h3><div id="hvTeacherActivities"></div></div>
+          <div class="hv-panel"><h3>Desafios publicados</h3><div id="hvTeacherChallenges"></div></div>
+        </div>
+        <div class="hv-panel"><h3>Registros dos estudantes neste navegador</h3><div id="hvTeacherObservations"></div></div>
+        <div class="hv-panel"><h3>Biblioteca compartilhada</h3><div id="hvTeacherMaterials"></div></div>
+        <div class="hv-panel"><h3>Portal de aprendizagem</h3><div id="hvGuidesTeacher" class="hv-grid"></div></div>
+      </div>
+    </div>
+  `;
+  main.prepend(workspace);
+
+  const guides = [
+    ['Compostagem', 'Separe resíduos vegetais e folhas secas. Alterne materiais úmidos e secos, mantenha a composteira arejada e observe a umidade. Evite carnes, laticínios e alimentos gordurosos.'],
+    ['Agricultura sustentável', 'Escolha espécies adequadas ao clima, cuide da saúde do solo, planeje o uso de água e prefira práticas que preservem a biodiversidade.'],
+    ['Biodiversidade', 'Observe as plantas e os animais presentes. Cultive espécies variadas e evite eliminar organismos sem identificá-los. Registre mudanças ao longo do tempo.'],
+    ['Economia de água', 'Verifique a umidade do solo antes de regar. Regue junto à terra, de preferência em horários mais frescos, e use cobertura vegetal para reduzir a evaporação.'],
+    ['Reaproveitamento', 'Use recipientes limpos e resistentes como vasos, sempre com furos para drenagem. Reutilize materiais de forma segura e adequada para o cultivo.'],
+    ['Atividade: diário da horta', 'Escolha uma planta, registre data, clima, aparência e cuidados realizados. Compare as observações semanalmente.']
+  ];
+
+  function addText(parent, tag, text, className) {
+    const node = document.createElement(tag);
+    node.textContent = text;
+    if (className) node.className = className;
+    parent.append(node);
+    return node;
+  }
+
+  function renderGuides(containerId) {
+    const container = document.getElementById(containerId);
+    container.replaceChildren();
+    guides.forEach(([title, body]) => {
+      const card = document.createElement('details');
+      card.className = 'hv-card';
+      const summary = document.createElement('summary');
+      summary.textContent = title;
+      addText(card, 'p', body);
+      card.prepend(summary);
+      container.append(card);
+    });
+  }
+
+  function card(parent, title, description, extra) {
+    const el = document.createElement('article');
+    el.className = 'hv-card';
+    addText(el, 'h3', title);
+    if (description) addText(el, 'p', description);
+    if (extra) addText(el, 'p', extra, 'hv-muted');
+    parent.append(el);
+    return el;
+  }
+
+  function currentProfile() {
+    try {
+      const user = JSON.parse(localStorage.getItem('hortaCurrentUser') || 'null');
+      const profile = user && user.profile;
+      if (profile === 'escolar') return 'estudante'; // compatibilidade com cadastro antigo
+      return ['individual', 'estudante', 'professor'].includes(profile)
+        ? profile
+        : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function render() {
+    const profile = currentProfile();
+    if (!profile) {
+      workspace.hidden = true;
+      return;
+    }
+
+    workspace.hidden = false;
+    document.getElementById('hvIndividual').hidden = profile !== 'individual';
+    document.getElementById('hvStudent').hidden = profile !== 'estudante';
+    document.getElementById('hvTeacher').hidden = profile !== 'professor';
+
+    const labels = {
+      individual: ['Minha horta', 'Seu espaço pessoal para cultivar, planejar e acompanhar suas plantas.'],
+      estudante: ['Horta da turma', 'Veja atividades, registre observações e acompanhe seu progresso.'],
+      professor: ['Painel do professor', 'Organize atividades, desafios e materiais educativos para a turma.']
+    };
+    document.getElementById('hvTitle').textContent = labels[profile][0];
+    document.getElementById('hvIntro').textContent = labels[profile][1];
+
+    // Mantém a experiência original individual; estudante e professor recebem painéis próprios.
+    ['plantas', 'calendario', 'desafios', 'diario'].forEach(id => {
+      const section = document.getElementById(id);
+      if (section) section.hidden = profile !== 'individual';
+    });
+
+    renderGuides('hvGuidesIndividual');
+    renderGuides('hvGuidesStudent');
+    renderGuides('hvGuidesTeacher');
+
+    renderStudent();
+    renderTeacher();
+  }
+
+  function renderStudent() {
+    const activities = read(KEYS.activities);
+    const challenges = read(KEYS.challenges);
+    const progress = read(KEYS.progress);
+    const observations = read(KEYS.observations);
+
+    const activityBox = document.getElementById('hvStudentActivities');
+    activityBox.replaceChildren();
+    const available = activities.filter(item => item.kind !== 'challenge');
+    if (!available.length) addText(activityBox, 'p', 'Ainda não há atividades publicadas.');
+    available.forEach(item => {
+      const el = card(activityBox, item.title, item.instructions, item.due ? 'Prazo: ' + item.due : '');
+      const done = progress.includes(item.id);
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'btn';
+      button.textContent = done ? 'Concluída' : 'Marcar como concluída';
+      button.disabled = done;
+      button.addEventListener('click', () => {
+        const updated = read(KEYS.progress);
+        if (!updated.includes(item.id)) updated.push(item.id);
+        write(KEYS.progress, updated);
+        render();
+      });
+      el.append(button);
+    });
+
+    const progressBox = document.getElementById('hvStudentProgress');
+    progressBox.replaceChildren();
+    const completeCount = available.filter(item => progress.includes(item.id)).length;
+    addText(progressBox, 'p', `${completeCount} de ${available.length} atividades concluídas.`);
+    const bar = document.createElement('div');
+    bar.className = 'hv-progress';
+    const fill = document.createElement('span');
+    fill.style.width = available.length ? `${completeCount / available.length * 100}%` : '0%';
+    bar.append(fill);
+    progressBox.append(bar);
+
+    const challengeBox = document.getElementById('hvStudentChallenges');
+    challengeBox.replaceChildren();
+    const activeChallenges = challenges;
+    if (!activeChallenges.length) addText(challengeBox, 'p', 'Ainda não há desafios publicados.');
+    activeChallenges.forEach(item => {
+      const el = card(`${item.type === 'coletivo' ? 'Coletivo · ' : 'Individual · '}${item.title}`,
+        `Categoria: ${item.category}. Objetivo: ${item.goal}`, item.steps);
+      const done = progress.includes(item.id);
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'btn';
+      button.textContent = done ? 'Concluído' : 'Concluir desafio';
+      button.disabled = done;
+      button.addEventListener('click', () => {
+        const updated = read(KEYS.progress);
+        if (!updated.includes(item.id)) updated.push(item.id);
+        write(KEYS.progress, updated);
+        render();
+      });
+      el.append(button);
+    });
+
+    const observationBox = document.getElementById('hvObservationList');
+    observationBox.replaceChildren();
+    observations.slice().reverse().forEach(item => {
+      card(observationBox, `${item.subject} · ${item.category}`, item.notes || 'Sem observações adicionais.', item.date);
+    });
+
+    document.getElementById('hvObservationForm').onsubmit = event => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const data = new FormData(form);
+      const user = JSON.parse(localStorage.getItem('hortaCurrentUser') || '{}');
+      const items = read(KEYS.observations);
+      items.push({
+        subject: String(data.get('subject') || '').trim(),
+        category: String(data.get('category') || ''),
+        notes: String(data.get('notes') || '').trim(),
+        author: user.name || 'Estudante',
+        date: new Date().toLocaleDateString('pt-BR')
+      });
+      write(KEYS.observations, items);
+      form.reset();
+      render();
+    };
+  }
+
+  function renderTeacher() {
+    const activities = read(KEYS.activities);
+    const challenges = read(KEYS.challenges);
+    const observations = read(KEYS.observations);
+    const materials = read(KEYS.materials);
+    const progress = read(KEYS.progress);
+
+    document.getElementById('hvTeacherSummary').textContent =
+      `${activities.length} atividades · ${challenges.length} desafios · ${observations.length} observações · ${progress.length} itens concluídos neste navegador.`;
+
+    const list = (id, items, formatter) => {
+      const box = document.getElementById(id);
+      box.replaceChildren();
+      if (!items.length) addText(box, 'p', 'Nenhum item cadastrado ainda.');
+      items.slice().reverse().forEach(item => card(box, item.title, formatter(item)));
+    };
+
+    list('hvTeacherActivities', activities, item =>
+      `${item.category}${item.due ? ' · Prazo: ' + item.due : ''} — ${item.instructions}`);
+    list('hvTeacherChallenges', challenges, item =>
+      `${item.type} · ${item.category} — Objetivo: ${item.goal}. ${item.steps}`);
+    list('hvTeacherObservations', observations, item =>
+      `${item.author || 'Estudante'} · ${item.category} · ${item.date}: ${item.notes || 'Sem observações adicionais.'}`);
+
+    const materialBox = document.getElementById('hvTeacherMaterials');
+    materialBox.replaceChildren();
+    if (!materials.length) addText(materialBox, 'p', 'Nenhum material compartilhado ainda.');
+    materials.slice().reverse().forEach(item => {
+      const el = card(materialBox, item.title, item.description);
+      if (item.url) {
+        const link = document.createElement('a');
+        link.href = item.url;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.textContent = 'Abrir material';
+        el.append(link);
+      }
+    });
+
+    document.getElementById('hvActivityForm').onsubmit = event => {
+      event.preventDefault();
+      const data = new FormData(event.currentTarget);
+      const items = read(KEYS.activities);
+      items.push({
+        id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+        kind: 'activity',
+        title: String(data.get('title')).trim(),
+        category: String(data.get('category')),
+        due: String(data.get('due') || ''),
+        instructions: String(data.get('instructions')).trim()
+      });
+      write(KEYS.activities, items);
+      event.currentTarget.reset();
+      render();
+    };
+
+    document.getElementById('hvChallengeForm').onsubmit = event => {
+      event.preventDefault();
+      const data = new FormData(event.currentTarget);
+      const items = read(KEYS.challenges);
+      items.push({
+        id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+        title: String(data.get('title')).trim(),
+        category: String(data.get('category')),
+        type: String(data.get('type')),
+        goal: String(data.get('goal')).trim(),
+        steps: String(data.get('steps')).trim()
+      });
+      write(KEYS.challenges, items);
+      event.currentTarget.reset();
+      render();
+    };
+
+    document.getElementById('hvMaterialForm').onsubmit = event => {
+      event.preventDefault();
+      const data = new FormData(event.currentTarget);
+      const items = read(KEYS.materials);
+      items.push({
+        title: String(data.get('title')).trim(),
+        url: String(data.get('url') || '').trim(),
+        description: String(data.get('description') || '').trim()
+      });
+      write(KEYS.materials, items);
+      event.currentTarget.reset();
+      render();
+    };
+  }
+
+  // Atualiza o painel após o formulário de acesso/cadastro existente salvar o usuário.
+  const authForm = document.getElementById('authForm');
+  if (authForm) authForm.addEventListener('submit', () => setTimeout(render, 0));
+
+  render();
+})();
 </script>
 </body>
 </html>
